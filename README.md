@@ -131,4 +131,4 @@ The bridge's WIFI LED also helps. Solid orange means it lost your router for 3 m
 
 ## License
 
-MIT. See [LICENSE](LICENSE). Original copyright © 2022 funtastix.
+MIT. See [LICENSE](LICENSE)
