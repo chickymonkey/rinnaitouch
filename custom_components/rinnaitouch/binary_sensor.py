@@ -20,10 +20,8 @@ async def async_setup_entry(hass, entry, async_add_entities):  # pylint: disable
         [
             RinnaiConnectedBinarySensorEntity(ip_address, name),
             RinnaiPreheatBinarySensorEntity(ip_address, name),
-            RinnaiGasValveBinarySensorEntity(ip_address, name),
             RinnaiCallingHeatBinarySensorEntity(ip_address, name),
             RinnaiFanOperatingBinarySensorEntity(ip_address, name),
-            RinnaiTimeSettingSensorEntity(ip_address, name),
         ]
     )
     return True
@@ -116,20 +114,6 @@ class RinnaiPreheatBinarySensorEntity(RinnaiHeaterStateBinarySensorEntity):
         return "mdi:fire-alert"
 
 
-class RinnaiGasValveBinarySensorEntity(RinnaiHeaterStateBinarySensorEntity):
-    """Binary sensor for gas valve active during heater operation."""
-
-    def __init__(self, ip_address, name):
-        super().__init__(ip_address, name)
-        self._attr_name = name + " Gas Valve Active Sensor"
-        self._attr_status_attr = "gas_valve_active"
-
-    @property
-    def icon(self):
-        """Return the icon to use in the frontend for this device."""
-        return "mdi:gas-burner"
-
-
 class RinnaiCallingHeatBinarySensorEntity(RinnaiHeaterStateBinarySensorEntity):
     """Binary sensor for calling for heat during heater operation."""
 
@@ -156,34 +140,6 @@ class RinnaiFanOperatingBinarySensorEntity(RinnaiHeaterStateBinarySensorEntity):
     def icon(self):
         """Return the icon to use in the frontend for this device."""
         return "mdi:fan-alert"
-
-
-class RinnaiTimeSettingSensorEntity(RinnaiBinarySensorEntity):
-    """Binary sensor for signaling the system is in time setting mode."""
-
-    def __init__(self, ip_address, name):
-        super().__init__(ip_address, name)
-        self._attr_name = name + " Time Setting Sensor"
-
-    @property
-    def icon(self):
-        """Return the icon to use in the frontend for this device."""
-        if self.is_on:
-            return "mdi:clock-alert-outline"
-        return "mdi:clock-outline"
-
-    @property
-    def is_on(self):
-        """If the sensor is currently on or off."""
-        state: RinnaiSystemStatus = self._system.get_stored_status()
-        if self.available:
-            return state.is_timesetting
-        return False
-
-    @property
-    def available(self):
-        """If the sensor is currently available."""
-        return not self._system.get_stored_status().has_fault
 
 
 class RinnaiConnectedBinarySensorEntity(RinnaiBinarySensorEntity):
