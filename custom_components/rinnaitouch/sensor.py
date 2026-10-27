@@ -290,7 +290,7 @@ class RinnaiConnectionStateSensor(SensorEntity):
         state = (self._connection_state or "").upper()
         if state == "CONNECTED":
             return "mdi:lan-connect"
-        if state == "CONNECTING":
+        if state in ("CONNECTING", "WAITING"):
             return "mdi:lan-pending"
         if state in ("REFUSED", "TIMEOUT", "ERROR"):
             return "mdi:lan-disconnect"

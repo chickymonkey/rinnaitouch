@@ -15,6 +15,8 @@ If you have cooling, evaporative cooling or zones, use the [original integration
 
 The original work was inspired by [MyTouch](https://github.com/christhehoff/MyTouch), [@C-Westin](https://github.com/C-Westin/rinnai_touch_climate) and [@jerryzou](https://github.com/jerryzou/rinnai_touch_climate). Thanks to all of them for the groundwork.
 
+The connection handling in the pyrinnaitouch fork is ported from [jerryzou/rinnai_touch_climate](https://github.com/jerryzou/rinnai_touch_climate) (MIT), which follows the [homebridge-rinnai-touch-platform](https://github.com/mantorok1/homebridge-rinnai-touch-platform) plugin.
+
 ## What's different from the original
 
 | Area | Change |
@@ -45,7 +47,7 @@ Existing heater entities keep the same unique IDs, so their history carries over
 | Sensor | Main Target Temperature Sensor | Current set point. |
 | Sensor | Schedule Time Period Sensor | Current schedule period (Wake, Leave, Return, Pre-Sleep, Sleep). |
 | Sensor | Advance Time Period Sensor | The period the schedule has been advanced to. |
-| Sensor | Connection State | Raw connection state: `CONNECTED`, `CONNECTING`, `TIMEOUT`, `REFUSED`, `ERROR` or `IDLE`. |
+| Sensor | Connection State | Raw connection state: `WAITING` (for the bridge's broadcast), `CONNECTING`, `CONNECTED`, `TIMEOUT`, `REFUSED`, `ERROR` or `IDLE`. |
 
 There is also a `rinnaitouch.rinnai_set_time` service that sets the controller's clock, from Home Assistant's time or from a given date and time.
 
@@ -53,31 +55,33 @@ There is also a `rinnaitouch.rinnai_set_time` service that sets the controller's
 
 The integration talks to the N-BW2 bridge over your local network, using the protocol in the [N-BW2 API manual](doc/NBW2API_Iss1.3.pdf). No cloud service is involved.
 
-1. **Discovery.** The bridge broadcasts a UDP packet on port 50000 every second. The library waits for a broadcast from the configured IP address. If none arrives within 30 seconds, it connects directly.
-2. **Connection.** The library opens a TCP connection to the bridge on port 27847, and the bridge replies with `*HELLO*`.
-3. **Status.** The bridge then pushes its full status as JSON about once a second. Home Assistant doesn't poll; it updates the entities whenever a status arrives.
-4. **Commands.** Each command is sent with a sequence number from 0 to 255. The bridge echoes that number in its next status, which confirms the command was received. The library sends one command at a time and waits up to 5 seconds for the echo.
-5. **Keepalive.** If no command has been sent for 10 seconds, the library sends a small idle command. Without it, the bridge drops the client after its TCP timeout (5 minutes by default) and reboots.
-6. **Recovery.** The library reconnects automatically if the bridge closes the connection, if nothing has been received for 30 seconds, or if garbled data arrives.
+The bridge has a single TCP connection slot and is unforgiving about how it is used. While the slot is free it broadcasts a UDP packet on port 50000 about once a second. The broadcasts stop when a client connects and resume roughly 7 seconds after it disconnects. Connecting before then is refused, and reconnecting within about a second of closing can get a client refused for minutes. The library works around this:
 
-The bridge only supports one client at a time. If the Rinnai/Brivis phone app is connected at the same time as Home Assistant, expect dropouts.
+1. **Waiting for the slot.** Before every connection, the first one and every reconnect, the library waits at least 10 seconds after its last connection closed. It then waits for a broadcast from the configured IP address, which means the slot is free. Only if no broadcast arrives for 5 minutes does it try connecting anyway.
+2. **Connection.** The library opens a TCP connection to the bridge on port 27847. It only counts as connected once the first status message arrives, not when the TCP connection opens.
+3. **Status.** The bridge pushes its full status as JSON about once a second. Home Assistant doesn't poll. Entities update when the status changes.
+4. **Commands.** Commands are sent one at a time, each numbered after the bridge's last sequence number (1–254, then back to 1). A command is confirmed when the status shows the new value. Where the status doesn't report that value, the bridge echoing the number counts as confirmation. An unconfirmed command is resent after 10 seconds, up to 3 attempts. A command the status already shows is skipped.
+5. **Keepalive.** If nothing has been sent for 60 seconds, the library sends a bare sequence number, so the bridge doesn't drop the client after its TCP timeout (5 minutes by default).
+6. **Recovery.** If no data arrives for 5 seconds, or the bridge closes the connection, the library reconnects using step 1. After 3 failed attempts in a row it waits a minute before trying again.
+
+The bridge only supports one client at a time. While the Rinnai/Brivis phone app, Homebridge or another integration is connected, Home Assistant waits (Connection State shows `WAITING`) until the bridge is free again.
 
 ## Dependency
 
 This integration depends on the library [pyrinnaitouch](https://github.com/chickymonkey/pyrinnaitouch), installed from the `connection-fixes` branch of the fork and pinned to an exact commit. Home Assistant installs it automatically from the GitHub archive listed in [manifest.json](custom_components/rinnaitouch/manifest.json):
 
 ```
-https://github.com/chickymonkey/pyrinnaitouch/archive/eb8f33dff9b1fb438d6ed437d08b832f1fbf5739.zip#pyrinnaitouch==0.13.4b1.post1
+https://github.com/chickymonkey/pyrinnaitouch/archive/2734d883fc440e11f7483c74b1f9ad7798af9e3f.zip#pyrinnaitouch==0.13.4b1.post2
 ```
 
-The fork is based on `pyrinnaitouch` 0.13.4b1 and is versioned `0.13.4b1.post1`, so Home Assistant replaces an already installed 0.13.4b1. It fixes the following:
+The fork is based on `pyrinnaitouch` 0.13.4b1 and is versioned `0.13.4b1.post2`, so Home Assistant replaces an already installed 0.13.4b1. Its connection handling is rewritten as described in [How it works](#how-it-works). Compared with 0.13.4b1:
 
 - **Connection thread stopping silently.** An unexpected error, such as a byte that isn't valid UTF-8 arriving from the bridge, used to stop the background connection thread for good. Status then froze, commands were never sent and no reconnect was attempted, while the integration still showed as connected. The thread now logs the error and reconnects.
-- **Data parsing.** Incoming data is parsed as raw bytes, and recovery from garbled data now works instead of always forcing a reconnect.
+- **Reconnecting too soon.** The original reconnected straight after a timeout or error, which the bridge refuses and can hold against the client for minutes. Every connection now waits for the release delay and the bridge's broadcast.
+- **Commands that didn't take effect.** Commands used to be fire-and-forget. They are now confirmed against the status and retried, and commands already in effect are not sent.
 - **Replayed commands.** Commands queued while disconnected are discarded on reconnect instead of being sent in a burst minutes later.
-- **Reconnect fallback.** The library now always falls back to a direct connection after 30 seconds, even if other traffic arrives on the broadcast port.
-- **Sequence numbers.** They now wrap at 255, as the API specifies, and command confirmation stays correct across the wrap.
-- **Smaller fixes.** Partial sends are retried straight away, a spurious "hello received more than once" error no longer appears on every reconnect, and a failing callback can no longer stop status updates.
+- **Less traffic.** A bare keepalive every 60 seconds replaces an idle command every 10 seconds, and Home Assistant only updates when the status changes.
+- **Data parsing.** Incoming data is parsed with a proper JSON decoder that copes with messages split across packets and with junk bytes.
 
 ## Installation
 
@@ -121,11 +125,15 @@ What to look for in the log:
 
 | Log message | Meaning |
 |---|---|
-| `Sending idle command N` followed by `Received sequence number N` and `Command wait end` | Normal keepalive, about every 10 seconds. |
+| `Sending keepalive N` / `Sending command N` then `Command N confirmed` | Normal operation (debug level). |
+| `Lost the connection to the Rinnai Touch module … no data for 5 s; reconnecting` | The bridge went quiet. Check its WiFi signal, and whether another app is connected. |
+| `Lost the connection … the module closed the connection; reconnecting` | The bridge dropped the connection. It reconnects once the bridge is free. |
+| `The module did not confirm … resending` / `… giving up` | A command was sent but the status never showed the change. |
+| `Discarded N command(s) queued while disconnected` | Commands sent during an outage were dropped instead of replayed. |
+| `N connection attempts failed; next try in 60 s` | The bridge refused or didn't answer three times in a row. |
+| `No broadcast from the unit at … for 300 s; connecting without one` | Another client may hold the connection, or broadcasts aren't reaching Home Assistant. Broadcasts need HA OS, or Docker with `network_mode: host`. |
+| `A Rinnai Touch module is broadcasting from …` | The bridge's IP address changed. Give it a fixed address and re-add the integration. |
 | `Unexpected error in connection thread, reconnecting` | An error the library recovered from. The traceback that follows shows the cause. |
-| `Discarded N command(s) queued while disconnected` | The connection dropped and recovered, and commands sent during the outage were dropped. |
-| `Resetting connection as no data received for at least 30 seconds` | The bridge went quiet. Check its WiFi signal, and whether another app is connected. |
-| `No UDP broadcast received from … attempting TCP connection directly` | No broadcast was seen, so the library is connecting directly. This is normal if broadcasts don't reach Home Assistant (for example in a Docker container without host networking). |
 
 The bridge's WIFI LED also helps. Solid orange means it lost your router for 3 minutes and is about to fall back to its own access point (see the [manual](doc/NBW2API_Iss1.3.pdf), section 2.5).
 
