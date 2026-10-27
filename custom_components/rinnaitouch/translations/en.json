@@ -17,7 +17,7 @@
                 "name": "Name",
                 "external_temperature_sensor": "Entity name of a temperature sensor to use (for NC3 or NC6)"
               },
-                    "description": "Please enter a hostname or IP address and name for your device"
+                    "description": "If an N-BW2 bridge was heard broadcasting on the network, its IP address is already filled in. Otherwise enter the bridge's hostname or IP address."
             }
         }
     }

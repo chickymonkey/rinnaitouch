@@ -22,7 +22,7 @@ The connection handling in the pyrinnaitouch fork is ported from [jerryzou/rinna
 | Area | Change |
 |---|---|
 | Modes | Heating only. Cooling, evaporative cooling and all zone entities are removed. |
-| Setup form | Asks only for host, name and an optional external temperature sensor. No zone questions. |
+| Setup form | Asks only for host, name and an optional external temperature sensor, with no zone questions. Fills in the bridge's IP address automatically when it hears the bridge's broadcast. |
 | Entities | Removed the cooling, evap, zone, heater mode, gas valve active and time setting entities. |
 | Fan speed | Fan only speed is limited to 1–16, as the N-BW2 API specifies. |
 | Dependency | Uses the patched [chickymonkey/pyrinnaitouch](https://github.com/chickymonkey/pyrinnaitouch) instead of `pyrinnaitouch==0.13.4b1` from PyPI. See [Dependency](#dependency). |
@@ -92,7 +92,7 @@ The fork is based on `pyrinnaitouch` 0.13.4b1 and is versioned `0.13.4b1.post2`,
 3. Restart Home Assistant.
 4. Go to **Settings → Devices & services → Add Integration** and search for **Rinnai Touch**.
 5. Enter:
-   - **Hostname or IP** – the bridge's IP address. Give it a fixed IP or a DHCP reservation.
+   - **Hostname or IP** – the bridge's IP address. The form listens for the bridge's broadcasts for a few seconds and fills this in if it hears one (see [Bridge discovery](#bridge-discovery)). Give the bridge a fixed IP or a DHCP reservation.
    - **Name** – for example `Rinnai Touch`.
    - **External temperature sensor** (optional) – the entity ID of a temperature sensor to show as the current temperature. Use this if your controller doesn't report one: the climate entity shows 0 °C when the controller reports none and no external sensor is set.
 
@@ -110,6 +110,35 @@ If the setup form still asks about zones, the old code is still installed, or yo
 Copy `custom_components/rinnaitouch` into the `custom_components` folder of your Home Assistant configuration directory, restart Home Assistant and add the integration as above.
 
 ## Troubleshooting
+
+### Bridge discovery
+
+When you add the integration, the setup form listens for 3 seconds for the bridge's UDP broadcasts on port 50000, and fills in the IP address of the first bridge it hears that isn't already set up.
+
+If the field stays empty:
+
+- **Another client holds the bridge.** The bridge only broadcasts while nobody is connected. Close the Rinnai/Brivis phone app, and stop Homebridge or any other Rinnai integration, including an existing Rinnai Touch entry for the same bridge. Then open the form again.
+- **Broadcasts don't reach Home Assistant.** This happens in Docker without `network_mode: host`, or when the bridge is on a different subnet or VLAN. Type the IP address in yourself. The integration still works, but every reconnect then waits 5 minutes before connecting without a broadcast.
+- **The bridge is offline.** Check that its PWR and WIFI LEDs are lit (see the [manual](doc/NBW2API_Iss1.3.pdf), section 2.5).
+
+### Automatic recovery
+
+You shouldn't need to restart Home Assistant or reload the integration to recover from a dropout. The library reconnects by itself:
+
+| What happens | How it's detected | What the library does |
+|---|---|---|
+| The bridge goes quiet | No data for 5 seconds (status normally arrives every second) | Closes the connection and reconnects |
+| The bridge closes the connection | The connection is closed from the other end | Reconnects |
+| Garbled or invalid data | Bytes that don't parse as a status message | Skips them and keeps the connection |
+| An unexpected error in the library | Any error in the connection thread | Logs it with a traceback and reconnects |
+| A command doesn't take effect | The status doesn't show the new value within 10 seconds | Resends it, up to 3 attempts, then gives up and logs an error |
+| Commands sent while disconnected | Commands still queued when the connection comes back | Discards them, so they aren't replayed later |
+
+Every reconnect waits at least 10 seconds after the last connection closed, then for the bridge's broadcast saying it's free, because the bridge refuses connections that come too soon. A dropout therefore usually recovers in 10–15 seconds. During that time the Connection State sensor shows `WAITING` and then `CONNECTING`, and the Connected sensor is off. If 3 attempts in a row fail, the library waits a minute before trying again.
+
+If the Connection State sensor stays at `WAITING`, the bridge isn't broadcasting. Something else is probably connected to it (see [Bridge discovery](#bridge-discovery)). If nothing else is connected, power-cycle the bridge.
+
+### Debug logging
 
 To enable debug logging, add this to `configuration.yaml`:
 
