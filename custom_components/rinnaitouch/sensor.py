@@ -21,14 +21,7 @@ from pyrinnaitouch import (
     RinnaiSystemStatus,
 )
 
-from .const import (
-    CONF_ZONE_A,
-    CONF_ZONE_B,
-    CONF_ZONE_C,
-    CONF_ZONE_D,
-    CONF_ZONE_COMMON,
-    DEFAULT_NAME,
-)
+from .const import DEFAULT_NAME
 
 # _LOGGER = logging.getLogger(__name__)
 
@@ -48,41 +41,6 @@ async def async_setup_entry(hass, entry, async_add_entities):  # pylint: disable
             RinnaiConnectionStateSensor(ip_address, name),
         ]
     )
-    if entry.data.get(CONF_ZONE_A):
-        async_add_entities(
-            [
-                RinnaiZoneTemperatureSensor(ip_address, "A", name, "set_temp"),
-                RinnaiZoneTemperatureSensor(ip_address, "A", name, "temperature"),
-            ]
-        )
-    if entry.data.get(CONF_ZONE_B):
-        async_add_entities(
-            [
-                RinnaiZoneTemperatureSensor(ip_address, "B", name, "set_temp"),
-                RinnaiZoneTemperatureSensor(ip_address, "B", name, "temperature"),
-            ]
-        )
-    if entry.data.get(CONF_ZONE_C):
-        async_add_entities(
-            [
-                RinnaiZoneTemperatureSensor(ip_address, "C", name, "set_temp"),
-                RinnaiZoneTemperatureSensor(ip_address, "C", name, "temperature"),
-            ]
-        )
-    if entry.data.get(CONF_ZONE_D):
-        async_add_entities(
-            [
-                RinnaiZoneTemperatureSensor(ip_address, "D", name, "set_temp"),
-                RinnaiZoneTemperatureSensor(ip_address, "D", name, "temperature"),
-            ]
-        )
-    if entry.data.get(CONF_ZONE_COMMON):
-        async_add_entities(
-            [
-                RinnaiZoneTemperatureSensor(ip_address, "U", name, "set_temp"),
-                RinnaiZoneTemperatureSensor(ip_address, "U", name, "temperature"),
-            ]
-        )
     return True
 
 
@@ -129,7 +87,7 @@ class RinnaiTemperatureSensor(SensorEntity):
     @property
     def name(self):
         """Name of the entity."""
-        return self._attr_name.replace("Zone U", "Common Zone")
+        return self._attr_name
 
     @property
     def icon(self):
@@ -172,75 +130,8 @@ class RinnaiMainTemperatureSensor(RinnaiTemperatureSensor):
         This is the only method that should fetch new data for Home Assistant.
         """
         state: RinnaiSystemStatus = self._system.get_stored_status()
-        if state.mode in (RinnaiSystemMode.COOLING, RinnaiSystemMode.HEATING):
+        if state.mode == RinnaiSystemMode.HEATING:
             return float(getattr(state.unit_status, self._temp_attr)) / self.multiplier
-        if state.mode == RinnaiSystemMode.EVAP and self._temp_attr == "temperature":
-            return float(getattr(state.unit_status, self._temp_attr)) / self.multiplier
-        return 0
-
-    @property
-    def available(self):
-        return self.native_value < 99 and self.native_value > 0
-
-
-class RinnaiZoneTemperatureSensor(RinnaiTemperatureSensor):
-    """Temperature sensor on a zone."""
-
-    def __init__(self, ip_address, zone, name, temp_attr="temperature"):
-        super().__init__(ip_address, name)
-        if temp_attr == "set_temp":
-            self._attr_name = name + " Zone " + zone + " Target Temperature Sensor"
-        else:
-            self._attr_name = name + " Zone " + zone + " Temperature Sensor"
-        self._attr_zone = zone
-        self._temp_attr = temp_attr
-        device_id = (
-            str.lower(self.__class__.__name__)
-            + "_"
-            + temp_attr
-            + "_"
-            + zone
-            + str.replace(ip_address, ".", "_")
-        )
-
-        self._attr_unique_id = device_id
-        self.multiplier = 10
-        if self._temp_attr == "set_temp":
-            self.multiplier = 1
-
-    @property
-    def native_value(self) -> float:
-        """Fetch new state data for the sensor.
-        This is the only method that should fetch new data for Home Assistant.
-        """
-        state: RinnaiSystemStatus = self._system.get_stored_status()
-        if (
-            state.mode in (RinnaiSystemMode.COOLING, RinnaiSystemMode.HEATING)
-            and self._attr_zone in state.unit_status.zones.keys()
-        ):
-            return (
-                float(
-                    getattr(
-                        state.unit_status.zones[self._attr_zone],
-                        self._temp_attr,
-                    )
-                )
-                / self.multiplier
-            )
-        if (
-            state.mode == RinnaiSystemMode.EVAP
-            and self._attr_zone in state.unit_status.zones.keys()
-            and self._temp_attr == "temperature"
-        ):
-            return (
-                float(
-                    getattr(
-                        state.unit_status.zones[self._attr_zone],
-                        self._temp_attr,
-                    )
-                )
-                / self.multiplier
-            )
         return 0
 
     @property
@@ -287,7 +178,7 @@ class RinnaiPeriodSensor(SensorEntity):
     @property
     def name(self):
         """Name of the entity."""
-        return self._attr_name.replace("Zone U", "Common Zone")
+        return self._attr_name
 
     @property
     def icon(self):
@@ -301,7 +192,7 @@ class RinnaiPeriodSensor(SensorEntity):
         if not state.system_on:
             return "N/A"
         if (
-            state.mode in (RinnaiSystemMode.COOLING, RinnaiSystemMode.HEATING)
+            state.mode == RinnaiSystemMode.HEATING
             and state.unit_status.is_on
             and state.unit_status.operating_mode == RinnaiOperatingMode.AUTO
         ):

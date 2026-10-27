@@ -11,17 +11,7 @@ from pyrinnaitouch import RinnaiSystem
 
 from .const import (
     DOMAIN,
-    CONF_ZONE_A,
-    CONF_ZONE_B,
-    CONF_ZONE_C,
-    CONF_ZONE_D,
-    CONF_ZONE_COMMON,
     CONF_TEMP_SENSOR,
-    CONF_TEMP_SENSOR_A,
-    CONF_TEMP_SENSOR_B,
-    CONF_TEMP_SENSOR_C,
-    CONF_TEMP_SENSOR_D,
-    CONF_TEMP_SENSOR_COMMON,
     DEFAULT_NAME,
 )
 
@@ -30,16 +20,6 @@ _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
-        vol.Required(CONF_ZONE_A): bool,
-        vol.Optional(CONF_TEMP_SENSOR_A): str,
-        vol.Required(CONF_ZONE_B): bool,
-        vol.Optional(CONF_TEMP_SENSOR_B): str,
-        vol.Required(CONF_ZONE_C): bool,
-        vol.Optional(CONF_TEMP_SENSOR_C): str,
-        vol.Required(CONF_ZONE_D): bool,
-        vol.Optional(CONF_TEMP_SENSOR_D): str,
-        vol.Required(CONF_ZONE_COMMON): bool,
-        vol.Optional(CONF_TEMP_SENSOR_COMMON): str,
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): str,
         vol.Optional(CONF_TEMP_SENSOR): str,
     }

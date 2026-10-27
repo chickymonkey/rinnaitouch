@@ -1,4 +1,4 @@
-"""Advance buttons to move to next schedule"""
+"""Advance button to move to next schedule"""
 # import logging
 
 from homeassistant.components.button import ButtonEntity
@@ -11,14 +11,7 @@ from pyrinnaitouch import (
     RinnaiSystemStatus,
 )
 
-from .const import (
-    CONF_ZONE_A,
-    CONF_ZONE_B,
-    CONF_ZONE_C,
-    CONF_ZONE_D,
-    CONF_ZONE_COMMON,
-    DEFAULT_NAME,
-)
+from .const import DEFAULT_NAME
 
 # _LOGGER = logging.getLogger(__name__)
 
@@ -32,22 +25,6 @@ async def async_setup_entry(
     if name == "":
         name = DEFAULT_NAME
     async_add_entities([RinnaiAdvanceButton(ip_address, name)])
-    if entry.data.get(CONF_ZONE_A):
-        async_add_entities([RinnaiZoneAdvanceButton(ip_address, "A", name)])
-    if entry.data.get(CONF_ZONE_B):
-        async_add_entities([RinnaiZoneAdvanceButton(ip_address, "B", name)])
-    if entry.data.get(CONF_ZONE_C):
-        async_add_entities([RinnaiZoneAdvanceButton(ip_address, "C", name)])
-    if entry.data.get(CONF_ZONE_D):
-        async_add_entities([RinnaiZoneAdvanceButton(ip_address, "D", name)])
-    if entry.data.get(CONF_ZONE_COMMON):
-        async_add_entities(
-            [
-                RinnaiZoneAdvanceButton(
-                    ip_address, "U", name + " Common Zone Advance Button"
-                )
-            ]
-        )
     return True
 
 
@@ -88,7 +65,7 @@ class RinnaiButtonEntity(ButtonEntity):
     @property
     def name(self):
         """Name of the entity."""
-        return self._attr_name.replace("Zone U", "Common Zone")
+        return self._attr_name
 
 
 class RinnaiAdvanceButton(RinnaiButtonEntity):
@@ -110,7 +87,7 @@ class RinnaiAdvanceButton(RinnaiButtonEntity):
     def available(self) -> bool:
         state: RinnaiSystemStatus = self._system.get_stored_status()
         if (
-            state.mode in (RinnaiSystemMode.HEATING, RinnaiSystemMode.COOLING)
+            state.mode == RinnaiSystemMode.HEATING
             and state.unit_status.operating_mode == RinnaiOperatingMode.AUTO
         ):
             return state.system_on
@@ -119,52 +96,8 @@ class RinnaiAdvanceButton(RinnaiButtonEntity):
     async def async_press(self) -> None:
         """Handle the button press."""
         state: RinnaiSystemStatus = self._system.get_stored_status()
-        if state.mode in (RinnaiSystemMode.HEATING, RinnaiSystemMode.COOLING):
+        if state.mode == RinnaiSystemMode.HEATING:
             if state.unit_status.advanced:
                 await self._system.unit_advance_cancel()
             else:
                 await self._system.unit_advance()
-
-
-class RinnaiZoneAdvanceButton(RinnaiButtonEntity):
-    """Advance button entity for a zone."""
-
-    def __init__(self, ip_address, zone, name):
-        super().__init__(ip_address, name)
-        self._attr_zone = zone
-        self._attr_name = name + " Zone " + zone + " Advance Button"
-        device_id = (
-            str.lower(self.__class__.__name__)
-            + "_"
-            + zone
-            + str.replace(ip_address, ".", "_")
-        )
-
-        self._attr_unique_id = device_id
-
-    @property
-    def icon(self):
-        """Return the icon to use in the frontend for this device."""
-        return "mdi:location-exit"
-
-    @property
-    def available(self):
-        state: RinnaiSystemStatus = self._system.get_stored_status()
-        if state.mode in (RinnaiSystemMode.HEATING, RinnaiSystemMode.COOLING):
-            return (
-                self._attr_zone in state.unit_status.zones.keys()
-                and state.unit_status.zones[self._attr_zone].auto_mode
-            )
-        return False
-
-    async def async_press(self) -> None:
-        """Handle the button press."""
-        state: RinnaiSystemStatus = self._system.get_stored_status()
-        if (
-            state.mode in (RinnaiSystemMode.HEATING, RinnaiSystemMode.COOLING)
-            and self._attr_zone in state.unit_status.zones.keys()
-        ):
-            if state.unit_status.zones[self._attr_zone].advanced:
-                await self._system.unit_zone_advance_cancel(self._attr_zone)
-            else:
-                await self._system.set_unit_zone_advance(self._attr_zone)
