@@ -1,4 +1,4 @@
 async_timeout>=3.0.1
 asyncio>=3.4.3
-pyrinnaitouch==0.13.4b1
+pyrinnaitouch @ https://github.com/chickymonkey/pyrinnaitouch/archive/eb8f33dff9b1fb438d6ed437d08b832f1fbf5739.zip
 homeassistant>=2024.2.0
